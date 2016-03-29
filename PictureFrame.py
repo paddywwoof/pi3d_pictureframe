@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 """This demo shows the use of special transition shaders on the Canvas 
 shape for 2D drawing.
 """
-import random, time, os, threading
+import random, time, os, threading, subprocess
 # if pi3d isn't installed as a module then you will need..
 import demo # only needed if pi3d not 'installed'. Does the same as..
 import pi3d
@@ -13,18 +13,19 @@ import picture_getter
 ########################################################################
 # set the user variables here
 ########################################################################
-PIC_DIR = '/home/patrick/pi3d_pictureframe/pictures' # for filtering subdirectories
+PIC_DIR = '/home/pi/pi3d_pictureframe/pictures' # for filtering subdirectories
                # and file names alter lines c. 52 and 56 below
-TMDELAY = 30.0  # time between slides This needs to be big enough for
+TMDELAY = 120.0# time between slides This needs to be big enough for
                # texture loading and fading
 FPS = 20       # animation frames per second
-FADE_TM = 6.0  # time for fading
+FADE_TM = 10.0 # time for fading
 TK = False     # set to true to run in tk window (have to start x server)
 MIPMAP = True  # whether to anti-alias map screen pixels to image pixels
                # set False if no scaling required (faster, less memory needed)
 SHUFFLE = True # randomly shuffle the pictures
 PPS = 3        # how many pictures to show before changing shader
-CHKNUM = 30    # number of picture between re-loading file list
+CHKNUM = 150   # number of picture between re-loading file list
+EMAILTM = 900  # seconds between email checks
 ########################################################################
 # Where the aspect ratio of the image is different from the monitor the
 # gap is filled with a low alpha reflection of the image. If you want this
@@ -40,7 +41,7 @@ class Messages(object):
     self.refresh_messages()
 
   def refresh_messages(self):
-    with open('messages.txt', 'r') as f:
+    with open('/home/pi/pi3d_pictureframe/messages.txt', 'r') as f:
       self.messages = f.read().splitlines()
     self.n_mess = len(self.messages)
     self.i_mess = self.n_mess - 1 # reverse order - last email first
@@ -51,16 +52,19 @@ class Messages(object):
     if self.i_mess < 0:
       self.i_mess = self.n_mess - 1
     message = ''
-    new_line = ''
+    next_line = ''
+    line_feed = ''
     for word in msg_split:
-      if len(new_line) > 80:
-        message += '\n' + new_line
-        new_line = ''
-      new_line += word + ' '
-    message += '\n' + new_line
-    msg = pi3d.FixedString('FreeSans.ttf', message, font_size=32, background_color=(50,50,50,10),
-            camera=CAMERA, shader=flatsh, f_type='SMOOTH')
+      if len(next_line) > 70:
+        message += line_feed + next_line
+        next_line = ''
+        line_feed = '\n'
+      next_line += word + ' '
+    message += line_feed + next_line
+    msg = pi3d.FixedString('/home/pi/pi3d_pictureframe/FreeSans.ttf', message, font_size=32,
+                           camera=CAMERA, shader=flatsh, f_type='EMBOSS')
     msg.sprite.position(0, (-msg.iy - DISPLAY.height)/2, 1.0)
+    msg.sprite.set_alpha(0.9)
     return msg
     
 def tex_load(fname):
@@ -102,13 +106,13 @@ class Slide(object):
     self.dimensions = None
 
 # start background checking email inbox
-email_param = {'run':True, 'freq':30.0}
+email_param = {'run':True, 'freq':EMAILTM, 'news':False}
 t = threading.Thread(target=picture_getter.background_checker, args=(email_param,))
-t.daemon = True
+#t.daemon = True
 t.start()
 
 # Setup display and initialise pi3d
-DISPLAY = pi3d.Display.create(background=(0.3, 0.3, 0.3, 1.0),
+DISPLAY = pi3d.Display.create(x=0, y=0, background=(0.0, 0.0, 0.0, 1.0),
                                 frames_per_second=FPS, tk=TK)
 if TK:
   win = DISPLAY.tkwin
@@ -145,17 +149,18 @@ sbg = tex_load(iFiles[pic_num]) # initially load a background slide
 messages = Messages()
 msg = messages.next_message()
 
-while DISPLAY.loop_running():
+while DISPLAY.loop_running() and email_param['run']:
   tm = time.time()
   if tm > nexttm: # load next image
     nexttm = tm + TMDELAY
     fade = 0.0 # reset fade to beginning
     sfg = sbg # foreground Slide set to old background
     pic_num = (pic_num + 1) % nFi # wraps to start
-    if (pic_num % CHKNUM) == 0: # this will shuffle as well
+    if (pic_num % CHKNUM) == 0 or email_param['news']: # this will shuffle as well
       iFiles, nFi = get_files()
       pic_num = pic_num % nFi # just in case list is severly shortened
       messages.refresh_messages()
+      email_param['news'] = False
     tmp_slide = tex_load(iFiles[pic_num]) # background Slide load.
     if tmp_slide != None: # checking in case file deleted
       sbg = tmp_slide
@@ -181,7 +186,6 @@ while DISPLAY.loop_running():
   if msg.sprite.y() > (msg.iy - DISPLAY.height) / 2 + 50:
     msg = messages.next_message()
     
-
   if TK:
     try:
       win.update() # needed if using tk
@@ -200,10 +204,8 @@ while DISPLAY.loop_running():
   else:
     k = mykeys.read()
     if k==27: #ESC
-      mykeys.close()
-      DISPLAY.stop()
       break
 
+mykeys.close()
 email_param['run'] = False
 DISPLAY.destroy()
-

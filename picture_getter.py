@@ -4,6 +4,8 @@ import imaplib
 import os
 import time
 from PIL import Image
+# if STOP_FILE exists then this signals program shutdown (by crontab)
+STOP_FILE = '/home/pi/pi3d_pictureframe/stop'
 
 class FetchEmail():
   connection = None
@@ -23,7 +25,8 @@ class FetchEmail():
     download folder (default is /tmp)
     """
     sender = self.parse_email_address(msg.get('From'))[0]
-    date = msg.get('Date')
+    date = msg.get('Date').split(':')
+    date = date[0] + ':' + date[1]
     subject = msg.get('Subject')
     content = msg.get_payload()
     if msg.is_multipart():
@@ -43,12 +46,12 @@ class FetchEmail():
             if w > 1920:
               rat = 1920.0 / w
               im.resize((int(im.size[0] * rat), int(im.size[1] * rat)), 
-                               Image.LANCZOS).save(att_path, quality=95)
+                               Image.BICUBIC).save(att_path, quality=95)
     else:
       body = content
     body = body.replace('\n',' ').replace('\r',' ').replace('  ',' ')
     with open(msg_file, 'a') as fp:
-      fp.write('From {} on {}: {} ==> {}\n'.format(sender, date, subject, body))
+      fp.write('From {} {} {} ==> {}\n'.format(sender, date, subject, body))
 
   def fetch_unread_messages(self):
     emails = []
@@ -79,15 +82,23 @@ class FetchEmail():
     """
     return email.utils.parseaddr(email_address)
 
-def background_checker(param={'run':True, 'freq':300.0}):
+def background_checker(param={'run':True, 'freq':60.0, 'news':False}):
   ''' this is designed to run in a thread so the params can be altered from
   the calling thread if they are in a dict object
   '''
+  if os.path.exists(STOP_FILE):
+    os.remove(STOP_FILE)
   while param['run']:
-    fetcher = FetchEmail('zeus3.easy-internet.co.uk', 'johngaunt@eldwick.org.uk', 'get,pictures,now!')
+    fetcher = FetchEmail('your_email_server', 'your_email_address', 'your_email_password')
     msg_list = fetcher.fetch_unread_messages()
     for msg in msg_list:
-      fetcher.save_details(msg, msg_file='/home/patrick/pi3d_pictureframe/messages.txt',
-                         download_folder='/home/patrick/pi3d_pictureframe/pictures')
+      fetcher.save_details(msg, msg_file='/home/pi/pi3d_pictureframe/messages.txt',
+                         download_folder='/home/pi/pi3d_pictureframe/pictures')
+    if len(msg_list) > 0:
+      param['news'] = True # signal that messages need reloading, after saving all
     fetcher.close_connection()
+    if os.path.exists(STOP_FILE): # i.e. it's been added by cron to signal this app to stop
+      param['run'] = False # use to signal to PictureFrame main loop
+      break # might as well break now rather than wait till after sleep
     time.sleep(param['freq'])
+
