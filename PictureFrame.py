@@ -173,6 +173,7 @@ while DISPLAY.loop_running() and email_param['run']:
       pictr = 0
       shnum = (shnum + 1) % num_sh
       canvas.set_shader(shader[shnum])
+    msg = messages.next_message()
 
   if fade < 1.0:
     fade += fade_step # increment fade
@@ -181,10 +182,14 @@ while DISPLAY.loop_running() and email_param['run']:
     canvas.unif[44] = fade # pass value to shader using unif list
 
   canvas.draw() # then draw it
-  msg.draw()
-  msg.sprite.translateY(0.2)
-  if msg.sprite.y() > (msg.iy - DISPLAY.height) / 2 + 50:
-    msg = messages.next_message()
+  if msg is not None: # sleep while nothing changing to save power
+    if msg.sprite.y() < (msg.iy - DISPLAY.height) / 2 + 50:
+      msg.draw()
+      msg.sprite.translateY(0.2)
+    else:
+      time.sleep(3.0)
+  else:
+    time.sleep(nexttm - tm)
     
   if TK:
     try:
